@@ -1,0 +1,12 @@
+{
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "netlify.toml",
+      ".gitignore",
+      "windsurf_deployment.yaml",
+      "**/node_modules/**"
+    ]
+  }
+}

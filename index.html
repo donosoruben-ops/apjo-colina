@@ -1,0 +1,1836 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador APJO - Auto Apertura Juicio Oral</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://unpkg.com/docx@8.2.0/build/index.umd.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+    <style>
+        body { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%); min-height: 100vh; }
+        .panel { background: rgba(255,255,255,0.98); backdrop-filter: blur(10px); }
+        .highlight-mp { background-color: #fef08a !important; }
+        .highlight-defensa { background-color: #bbf7d0 !important; }
+        .field-tag { 
+            background: #e0e7ff; 
+            padding: 2px 8px; 
+            border-radius: 4px; 
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .field-filled-mp { background: #fef08a; padding: 2px 4px; border-radius: 2px; }
+        .field-filled-defensa { background: #bbf7d0; padding: 2px 4px; border-radius: 2px; }
+        .template-preview {
+            font-family: 'Times New Roman', serif;
+            font-size: 11px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .pdf-preview {
+            max-height: 500px;
+            overflow-y: auto;
+            font-size: 11px;
+            line-height: 1.3;
+        }
+        .btn-mp { background: #eab308; color: #000; }
+        .btn-mp:hover { background: #ca8a04; }
+        .btn-defensa { background: #22c55e; color: #fff; }
+        .btn-defensa:hover { background: #16a34a; }
+        .loading { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        /* Link Modal */
+        .link-modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .link-modal-overlay.hidden { display: none; }
+        .link-modal {
+            background: white; border-radius: 16px; padding: 32px; max-width: 550px; width: 90%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .link-url-box {
+            background: #f3f4f6; border: 2px solid #d1d5db; border-radius: 8px; padding: 12px;
+            font-family: monospace; font-size: 13px; word-break: break-all; color: #1e3a5f;
+            margin-bottom: 12px; user-select: all;
+        }
+        .btn-copy { background: #6366f1; color: white; }
+        .btn-copy:hover { background: #4f46e5; }
+        .btn-copy.copied { background: #22c55e; }
+        /* Defense-only view */
+        .defense-view-container {
+            max-width: 600px; margin: 40px auto; padding: 20px;
+        }
+        .defense-view-card {
+            background: white; border-radius: 16px; padding: 32px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        .defense-view-card h2 { color: #1e3a5f; font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+        .defense-view-card .rit-badge {
+            background: #e0e7ff; color: #3730a3; padding: 6px 16px; border-radius: 8px;
+            font-size: 20px; font-weight: 700; display: inline-block; margin-bottom: 20px;
+        }
+        .defense-success { text-align: center; padding: 40px 20px; }
+        .defense-success i { font-size: 64px; color: #22c55e; margin-bottom: 16px; }
+        /* Received submissions box */
+        .qr-submission-item {
+            background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px; margin-bottom: 8px;
+        }
+        .qr-submission-item .meta { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
+        .qr-submission-item .content { font-size: 13px; color: #1f2937; white-space: pre-wrap; }
+    </style>
+</head>
+<body class="p-4">
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <div class="text-center mb-4">
+            <h1 class="text-3xl font-bold text-white mb-1">
+                <i class="fas fa-gavel mr-2"></i>Generador APJO
+            </h1>
+            <p class="text-blue-200">Auto de Apertura de Juicio Oral - Juzgado de Garantía de Colina</p>
+        </div>
+
+        <!-- Main Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+            
+            <!-- LEFT PANEL: Template Preview -->
+            <div class="panel rounded-xl shadow-2xl p-4">
+                <h2 class="text-lg font-bold text-blue-800 mb-2">
+                    <i class="fas fa-file-word mr-2"></i>Plantilla APJO
+                </h2>
+                <!-- Template controls: selector + upload button -->
+                <div style="display:grid; grid-template-columns:1fr auto; gap:8px; align-items:center;" class="mb-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
+                    <select id="templateSelector" onchange="switchTemplate()" class="text-xs border border-blue-300 rounded px-2 py-1.5 bg-white" style="min-width:0; overflow:hidden; text-overflow:ellipsis;">
+                    </select>
+                    <!-- Native label+input: always opens OS file browser on click -->
+                    <label for="templateWordInput" class="cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold py-1.5 px-4 rounded-lg transition whitespace-nowrap flex items-center gap-1">
+                        <i class="fas fa-file-upload"></i> Subir Word
+                    </label>
+                    <input type="file" id="templateWordInput" accept=".docx" style="display:none;" onchange="handleWordTemplateUploadAndSave(event)">
+                </div>
+                <div id="templatePreview" class="template-preview border rounded-lg p-3 bg-gray-50">
+                    <!-- Template will be rendered here -->
+                </div>
+            </div>
+
+            <!-- RIGHT PANEL: PDF Upload & Preview -->
+            <div class="panel rounded-xl shadow-2xl p-4 lg:col-span-2">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-lg font-bold text-red-800">
+                        <i class="fas fa-file-pdf mr-2"></i>Acusación Fiscal (PDF)
+                    </h2>
+                    <div class="flex items-center gap-2">
+                        <button onclick="clearCurrentCase()" class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded-lg text-sm">
+                            <i class="fas fa-eraser mr-1"></i>Limpiar PDF
+                        </button>
+                        <label class="cursor-pointer bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg text-sm">
+                            <i class="fas fa-upload mr-1"></i>Cargar PDF
+                            <input type="file" id="pdfInput" accept=".pdf" class="hidden">
+                        </label>
+                    </div>
+                </div>
+                <div id="pdfPreview" class="pdf-preview border rounded-lg bg-gray-50 text-gray-600" style="padding: 0; overflow: hidden;">
+                    <div class="text-center py-10" id="pdfPlaceholder">
+                        <i class="fas fa-file-pdf text-4xl text-gray-300 mb-2"></i>
+                        <p>Cargue el PDF de la acusación fiscal</p>
+                    </div>
+                    <embed id="pdfEmbed" src="" type="application/pdf" width="100%" height="700px" style="display: none;" />
+                </div>
+
+                <!-- Claude Vision UI -->
+                <div class="mt-4 border-t pt-4">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">
+                        <i class="fas fa-key mr-1"></i>API Key de Claude Vision
+                    </label>
+                    <div class="flex gap-2 mb-3">
+                        <input type="password" id="claudeApiKey" placeholder="sk-ant-api03-..." 
+                               class="flex-1 border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-purple-500 focus:outline-none text-sm">
+                        <button onclick="validateClaudeAPI()" id="btnConnectAPI"
+                                class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition flex items-center gap-2 whitespace-nowrap">
+                            <i class="fas fa-plug mr-1"></i>Conectar
+                        </button>
+                    </div>
+                    <div id="apiStatusContainer" class="hidden mb-3 p-2 rounded-lg text-sm font-semibold flex items-center gap-2">
+                        <i id="apiStatusIcon" class="fas"></i>
+                        <span id="apiStatusText"></span>
+                    </div>
+                    
+                    <button onclick="extractWithClaude()" id="btnExtractClaude" disabled
+                            class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i class="fas fa-brain"></i>
+                        BARRIDO Y LECTURA IA DEL PDF
+                    </button>
+
+                    <!-- Progress Bar -->
+                    <div id="progressContainer" class="hidden mt-3">
+                        <div class="flex justify-between text-xs font-semibold text-gray-600 mb-1">
+                            <span id="progressText">Analizando documento con IA...</span>
+                            <span id="progressPercent">0%</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2.5">
+                            <div id="progressBar" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Proof Audit -->
+        <div class="panel rounded-xl shadow-2xl p-4 mb-4">
+            <h2 class="text-lg font-bold text-amber-800 mb-3">
+                <i class="fas fa-clipboard-check mr-2"></i>Control de Pruebas del Ministerio Público
+            </h2>
+            <div id="proofAuditGrid" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="text-center text-gray-400 py-3 md:col-span-2">
+                    Cargue y procese un PDF para ver el control de pruebas.
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="panel rounded-xl shadow-2xl p-4 mb-4">
+            <div class="grid grid-cols-1 md:grid-cols-1 gap-4">
+                <!-- RIT Input -->
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">RIT de la Causa</label>
+                    <input type="text" id="ritInput" placeholder="Ej: 3181-2024" 
+                           class="w-full border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:outline-none">
+                </div>
+            </div>
+        </div>
+
+        <!-- Defense Section -->
+        <div class="panel rounded-xl shadow-2xl p-4 mb-4">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-lg font-bold text-green-800">
+                    <i class="fas fa-shield-alt mr-2"></i>Prueba de la Defensa
+                </h2>
+                <div class="flex items-center gap-2">
+                    <button onclick="generateDefenseLink()" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition flex items-center gap-2">
+                        <i class="fas fa-link"></i>
+                        Enlace para Defensa
+                    </button>
+                    <button onclick="insertManualDefenseData()" class="btn-defensa font-bold py-2 px-4 rounded-lg transition flex items-center gap-2">
+                        <i class="fas fa-plus-circle"></i>
+                        Insertar Pruebas Defensa Manual
+                    </button>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Prueba Testimonial</label>
+                    <textarea id="defenseTestimonial" rows="3" placeholder="Pegue aquí la prueba testimonial de la defensa..."
+                              class="w-full border rounded-lg px-3 py-2 text-sm"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Prueba Documental</label>
+                    <textarea id="defenseDocumental" rows="3" placeholder="Pegue aquí la prueba documental de la defensa..."
+                              class="w-full border rounded-lg px-3 py-2 text-sm"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Prueba Pericial</label>
+                    <textarea id="defensePericial" rows="3" placeholder="Pegue aquí la prueba pericial de la defensa..."
+                              class="w-full border rounded-lg px-3 py-2 text-sm"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Otros Medios de Prueba</label>
+                    <textarea id="defenseOtros" rows="3" placeholder="Pegue aquí otros medios de prueba de la defensa..."
+                              class="w-full border rounded-lg px-3 py-2 text-sm"></textarea>
+                </div>
+            </div>
+
+            <!-- Received QR Submissions from Defense -->
+            <div class="mt-4 border-t pt-4">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-md font-bold text-purple-800">
+                        <i class="fas fa-inbox mr-2"></i>Pruebas recibidas vía enlace de la Defensa
+                    </h3>
+                    <button onclick="insertEnlaceDefenseData()" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1 px-3 rounded-lg transition flex items-center gap-1">
+                        <i class="fas fa-plus-circle"></i> Insertar Pruebas Defensa Vía Enlace
+                    </button>
+                    <button onclick="clearFirebaseSubmissions()" class="bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-1 px-3 rounded-lg transition flex items-center gap-1">
+                        <i class="fas fa-trash-alt"></i> Limpiar pruebas enlace
+                    </button>
+                </div>
+                <div id="qrSubmissionsContainer" class="min-h-[60px]">
+                    <p class="text-sm text-gray-400 italic">Aún no se han recibido pruebas vía enlace.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Generate Word Button -->
+        <div class="panel rounded-xl shadow-2xl p-4 mb-4">
+            <button onclick="generateWord()" id="btnGenerateWord"
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition flex items-center justify-center gap-2 text-lg">
+                <i class="fas fa-file-download"></i>
+                Generar Word
+            </button>
+        </div>
+
+        <!-- Link Modal -->
+        <div id="linkModal" class="link-modal-overlay hidden">
+            <div class="link-modal">
+                <h3 class="text-xl font-bold text-blue-900 mb-2">
+                    <i class="fas fa-link mr-2"></i>Enlace para la Defensa
+                </h3>
+                <p class="text-sm text-gray-600 mb-3">Comparta esta dirección con los defensores para que suban su listado de pruebas:</p>
+                <div id="linkUrlBox" class="link-url-box"></div>
+                <div class="flex gap-2 mb-2">
+                    <button id="btnCopyLink" onclick="copyDefenseLink()" class="btn-copy font-bold py-2 px-4 rounded-lg transition flex items-center gap-2 flex-1 justify-center">
+                        <i class="fas fa-copy"></i> Copiar enlace
+                    </button>
+                    <button onclick="closeLinkModal()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition flex items-center gap-2">
+                        <i class="fas fa-times"></i> Cerrar
+                    </button>
+                </div>
+                <div class="mb-3">
+                    <button onclick="sendDefenseLinkByEmail()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition flex items-center gap-2 justify-center">
+                        <i class="fas fa-envelope"></i> Enviar por correo al defensor
+                    </button>
+                </div>
+                <p id="linkRitDisplay" class="text-sm font-semibold text-indigo-700 text-center"></p>
+            </div>
+        </div>
+
+        <!-- Template Upload Modal -->
+        <div id="templateModal" class="link-modal-overlay hidden">
+            <div class="link-modal" style="max-width:700px;">
+                <h3 class="text-xl font-bold text-blue-900 mb-3">
+                    <i class="fas fa-file-word mr-2"></i>Cargar plantilla Word (.docx)
+                </h3>
+
+                <!-- Step 1: Upload Word File -->
+                <div class="mb-4 p-4 bg-blue-50 border-2 border-blue-200 border-dashed rounded-lg text-center">
+                    <i class="fas fa-cloud-upload-alt text-4xl text-blue-400 mb-2 block"></i>
+                    <p class="text-sm font-bold text-blue-800 mb-1">Haga clic en el botón para seleccionar su archivo Word (.docx)</p>
+                    <p class="text-xs text-gray-500 mb-3">El sistema leerá el contenido y lo usará como plantilla</p>
+                    <input type="file" id="templateWordInput" accept=".docx" style="display:none;" onchange="handleWordTemplateUpload(event)">
+                    <button type="button" onclick="document.getElementById('templateWordInput').click()" 
+                            class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition">
+                        <i class="fas fa-folder-open mr-2"></i>Seleccionar archivo .docx
+                    </button>
+                </div>
+
+                <!-- Upload status -->
+                <div id="templateUploadStatus" class="hidden mb-3 p-3 rounded-lg text-sm font-semibold"></div>
+
+                <!-- Preview of extracted text (collapsible) -->
+                <div id="templatePreviewSection" class="hidden mb-3">
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="block text-sm font-semibold text-gray-700">Vista previa del texto extraído</label>
+                        <span id="templateFieldCount" class="text-xs text-green-600 font-bold"></span>
+                    </div>
+                    <textarea id="templateVersionText" rows="8" readonly
+                        class="w-full border-2 border-gray-300 rounded-lg px-3 py-2 text-xs font-mono bg-gray-50 focus:outline-none"></textarea>
+                </div>
+
+                <!-- Name (auto-filled from filename) -->
+                <div id="templateNameSection" class="hidden mb-3">
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Nombre de la plantilla</label>
+                    <input type="text" id="templateVersionName" 
+                           class="w-full border-2 border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
+                </div>
+
+                <!-- Action buttons -->
+                <div class="flex gap-2">
+                    <button onclick="saveUploadedTemplate()" id="btnSaveTemplate" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition flex items-center gap-2 justify-center hidden">
+                        <i class="fas fa-save"></i> Guardar como plantilla activa
+                    </button>
+                    <button onclick="deleteSelectedTemplate()" id="btnDeleteTemplate" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition flex items-center gap-2 hidden">
+                        <i class="fas fa-trash-alt"></i> Eliminar seleccionada
+                    </button>
+                    <button onclick="closeTemplateModal()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition flex items-center gap-2">
+                        <i class="fas fa-times"></i> Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Extracted Data Preview -->
+        <div class="panel rounded-xl shadow-2xl p-4 mb-4">
+            <h2 class="text-lg font-bold text-purple-800 mb-3">
+                <i class="fas fa-database mr-2"></i>Datos Extraídos
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3" id="extractedDataGrid">
+                <div class="text-center text-gray-400 py-4 col-span-full">
+                    Los datos extraídos aparecerán aquí después de procesar el PDF
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="panel rounded-xl shadow-lg p-3">
+            <div class="flex items-center justify-between">
+                <div id="statusMessage" class="text-sm text-gray-600">
+                    <i class="fas fa-info-circle mr-1"></i>Listo para comenzar
+                </div>
+                <div class="text-xs text-gray-400">
+                    Magistrado Rubén Hernán Donoso Paredes - Juez de Garantía de Colina
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // Template with placeholders
+        const templateText = `RIT                   	            {{rit}}
+RUC				{{ruc}}
+RESOLUCIÓN                 	Auto Apertura Juicio Oral.
+TRIBUNAL                           Juzgado de Garantía de Colina.
+
+AUTO DE APERTURA DE JUICIO ORAL
+Colina, {{fecha}}
+
+Vistos y oídos y considerando:
+Que habiéndose puesto termino a la audiencia de preparación de juicio oral, celebrada en presencia del Fiscal del Ministerio Público, quien dedujo acusación por los hechos denunciados, de acuerdo lo disponen el artículo 248 letra b), en relación con el artículo 259 del Código Procesal Penal, en contra de {{imputado}}, domiciliado en {{domicilio_imputado}}, apercibido en el mismo de acuerdo a lo dispuesto en el artículo 26 del Código Procesal Penal, asistido por la defensa y de conformidad a lo establecido en el artículo 277 del Código Procesal Penal, se dicta el siguiente auto de apertura del juicio oral:
+
+PRIMERO: Tribunal competente. Que, el tribunal competente para conocer del juicio oral es el Tribunal Oral en lo Penal con asiento en la comuna de Colina.
+
+SEGUNDO: Hechos de la acusación, calificación jurídica del delito, circunstancias modificatorias, participación y pena requerida. Que, la acusación presentada por el Ministerio Público, y que deberá ser objeto de juicio oral, es del siguiente tenor: 
+1.- {{hechos}}
+2.- {{calificacion}}
+3.- {{participacion}}
+4.- {{circunstancias}}
+5.- {{preceptos}}
+6.- {{pena}}
+
+TERCERO: Convenciones Probatorias. Que, no se arribó a convenciones probatorias.
+
+CUARTO: Querella. Que, no se presentó querella. 
+
+QUINTO: Demanda Civil. Que, no se presentó demanda civil.
+
+SEXTO: Prueba a rendir en el Juicio Oral. Que, en el juicio oral se rendirá la siguiente prueba respecto de la acusación:
+
+1.- PRUEBA DEL MINISTERIO PÚBLICO:
+
+1.A.- Prueba Testimonial del MINISTERIO PÚBLICO:
+{{prueba_testimonial_mp}}
+
+1.B.- Prueba Documental del MINISTERIO PÚBLICO:
+{{prueba_documental_mp}}
+
+1.C.- Prueba Pericial del MINISTERIO PÚBLICO:
+{{prueba_pericial_mp}}
+
+1.D.- Otros medios de prueba del MINISTERIO PÚBLICO:
+{{otros_medios_mp}}
+
+2.- PRUEBA DE LA DEFENSA:
+
+PRUEBAS RECIBIDAS VIA ENLACE DE LA DEFENSA:
+{{pruebas_enlace_defensa}}
+
+2.A.- Prueba Testimonial de la DEFENSA:
+{{prueba_testimonial_defensa}}
+
+2.B.- Prueba Documental de la DEFENSA:
+{{prueba_documental_defensa}}
+
+2.C.- Prueba Pericial de la DEFENSA:
+{{prueba_pericial_defensa}}
+
+2.D.- Otros medios de prueba de la DEFENSA:
+{{otros_medios_defensa}}
+
+SÉPTIMO: Citación de testigos y peritos. Que, deberán ser citados a la audiencia de juicio oral, y bajo los apercibimientos legales correspondientes, las personas ampliamente individualizadas en el considerando anterior del presente auto de apertura.
+
+OCTAVO: Pago. Que, el Ministerio Público deberá asumir el pago de las indemnizaciones, a que haya lugar, así como de los gastos de traslado, habitación y alimentación de los testigos y peritos que han presentado y que no se desempeñen en calidad de funcionarios públicos.
+
+NOVENO: Medidas cautelares. Que, llamándose a revisar las medidas cautelares, estas se mantuvieron en el mismo sentido decretadas, lo anterior con relación al acusado {{imputado}}.
+
+Por lo anteriormente expuesto y teniendo además presente lo dispuesto en los artículos 259 y siguientes del Código Procesal Penal, se resuelve:
+I.- Ábrase Juicio Oral ante el Tribunal de Juicio Oral en lo Penal de Colina, para conocer de la acusación deducida por el Ministerio Público, en contra de {{imputado}}.
+II.- Póngase a disposición del Tribunal de Juicio Oral en lo Penal de Colina al acusado {{imputado}}.
+III.- Remítase este Auto de Apertura al Tribunal de Juicio Oral en lo Penal de Colina, dentro del plazo señalado en el artículo 281 del Código Procesal Penal. Devuélvanse los registros de investigación al Ministerio Público.
+IV.- Téngase por notificados de esta resolución, a todos los intervinientes asistentes a la audiencia de preparación, y notifíquese por cédula a los demás intervinientes bajo los apercibimientos del artículo 33 del Código Procesal Penal.
+
+Regístrese y Agréguese copia a la carpeta respectiva.
+
+RIT: 	{{rit}}
+RUC: 	{{ruc}}
+
+Dirigió la audiencia y resolvió el Magistrado Rubén Hernán Donoso Paredes. Juez de Garantía de Colina.`;
+
+        // State
+        let extractedData = {};
+        let pdfText = '';
+        let pdfBase64 = '';
+        let currentTemplate = templateText;
+
+        // ============================================================
+        // TEMPLATE VERSION MANAGEMENT
+        // ============================================================
+        const TEMPLATES_KEY = 'apjo_templates';
+
+        function loadTemplates() {
+            try {
+                const stored = JSON.parse(localStorage.getItem(TEMPLATES_KEY) || '[]');
+                if (stored.length > 0) return stored;
+            } catch (e) {}
+            // First time: save the hardcoded template as "Original"
+            const initial = [{
+                id: Date.now(),
+                name: 'Original',
+                text: templateText,
+                date: new Date().toLocaleString('es-CL')
+            }];
+            localStorage.setItem(TEMPLATES_KEY, JSON.stringify(initial));
+            return initial;
+        }
+
+        function saveTemplates(templates) {
+            localStorage.setItem(TEMPLATES_KEY, JSON.stringify(templates));
+        }
+
+        function populateTemplateSelector() {
+            const sel = document.getElementById('templateSelector');
+            const templates = loadTemplates();
+            sel.innerHTML = '';
+            templates.forEach((t, idx) => {
+                const opt = document.createElement('option');
+                opt.value = t.id;
+                opt.textContent = `${t.name} (${t.date})`;
+                sel.appendChild(opt);
+            });
+            // Default to the last (newest) template
+            if (templates.length > 0) {
+                sel.value = templates[templates.length - 1].id;
+            }
+        }
+
+        function switchTemplate() {
+            const sel = document.getElementById('templateSelector');
+            const templates = loadTemplates();
+            const selected = templates.find(t => String(t.id) === sel.value);
+            if (selected) {
+                currentTemplate = selected.text;
+                renderTemplate();
+                updateStatus(`Plantilla "${selected.name}" seleccionada.`, 'success');
+            }
+        }
+
+        function showUploadTemplateModal() {
+            // Reset modal state
+            document.getElementById('templateWordInput').value = '';
+            document.getElementById('templateVersionName').value = '';
+            document.getElementById('templateVersionText').value = '';
+            document.getElementById('templatePreviewSection').classList.add('hidden');
+            document.getElementById('templateNameSection').classList.add('hidden');
+            document.getElementById('btnSaveTemplate').classList.add('hidden');
+            document.getElementById('templateUploadStatus').classList.add('hidden');
+            // Show delete button only if more than 1 template
+            const templates = loadTemplates();
+            document.getElementById('btnDeleteTemplate').classList.toggle('hidden', templates.length <= 1);
+            document.getElementById('templateModal').classList.remove('hidden');
+        }
+
+        function closeTemplateModal() {
+            document.getElementById('templateModal').classList.add('hidden');
+        }
+
+        // Direct upload and save — used by the label+input in the header (no modal needed)
+        async function handleWordTemplateUploadAndSave(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            updateStatus('Leyendo archivo Word...', 'loading');
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+                const extractedText = result.value.trim();
+
+                if (!extractedText) {
+                    updateStatus('No se pudo extraer texto del archivo Word.', 'error');
+                    return;
+                }
+
+                const baseName = file.name.replace(/\.docx$/i, '');
+                const templates = loadTemplates();
+                const newT = {
+                    id: Date.now(),
+                    name: baseName,
+                    text: extractedText,
+                    date: new Date().toLocaleString('es-CL')
+                };
+                templates.push(newT);
+                saveTemplates(templates);
+
+                populateTemplateSelector();
+                document.getElementById('templateSelector').value = newT.id;
+                currentTemplate = newT.text;
+                renderTemplate();
+
+                // Reset input so the same file can be re-uploaded if needed
+                event.target.value = '';
+
+                updateStatus(`Plantilla "${baseName}" cargada y activa correctamente.`, 'success');
+            } catch (error) {
+                console.error('Error reading .docx:', error);
+                updateStatus('Error al leer el archivo Word: ' + error.message, 'error');
+            }
+        }
+
+        // Handle .docx file upload — extract text using mammoth.js
+        async function handleWordTemplateUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const statusEl = document.getElementById('templateUploadStatus');
+            statusEl.className = 'mb-3 p-3 rounded-lg text-sm font-semibold bg-blue-100 text-blue-800';
+            statusEl.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Leyendo archivo Word...';
+            statusEl.classList.remove('hidden');
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+                const extractedText = result.value.trim();
+
+                if (!extractedText) {
+                    statusEl.className = 'mb-3 p-3 rounded-lg text-sm font-semibold bg-red-100 text-red-800';
+                    statusEl.innerHTML = '<i class="fas fa-exclamation-triangle mr-2"></i>No se pudo extraer texto del archivo.';
+                    return;
+                }
+
+                // Show preview
+                document.getElementById('templateVersionText').value = extractedText;
+                document.getElementById('templatePreviewSection').classList.remove('hidden');
+
+                // Count detected fields after normalization
+                const normalized = normalizeTemplate(extractedText);
+                const detectedFields = (normalized.match(/\{\{\w+\}\}/g) || []);
+                document.getElementById('templateFieldCount').textContent = 
+                    `${detectedFields.length} campos dinámicos detectados`;
+
+                // Auto-fill name from filename
+                const baseName = file.name.replace(/\.docx$/i, '');
+                document.getElementById('templateVersionName').value = baseName;
+                document.getElementById('templateNameSection').classList.remove('hidden');
+
+                // Show save button
+                document.getElementById('btnSaveTemplate').classList.remove('hidden');
+
+                statusEl.className = 'mb-3 p-3 rounded-lg text-sm font-semibold bg-green-100 text-green-800';
+                statusEl.innerHTML = `<i class="fas fa-check-circle mr-2"></i>Archivo "${file.name}" leído correctamente. Presione "Guardar" para usarlo como plantilla.`;
+
+            } catch (error) {
+                console.error('Error reading .docx:', error);
+                statusEl.className = 'mb-3 p-3 rounded-lg text-sm font-semibold bg-red-100 text-red-800';
+                statusEl.innerHTML = '<i class="fas fa-exclamation-triangle mr-2"></i>Error al leer el archivo: ' + error.message;
+            }
+        }
+
+        // Save the uploaded template
+        function saveUploadedTemplate() {
+            const name = document.getElementById('templateVersionName').value.trim();
+            const text = document.getElementById('templateVersionText').value.trim();
+            if (!name) { alert('Debe ingresar un nombre para la plantilla.'); return; }
+            if (!text) { alert('No hay texto de plantilla. Suba un archivo Word primero.'); return; }
+
+            const templates = loadTemplates();
+            const newT = {
+                id: Date.now(),
+                name: name,
+                text: text,
+                date: new Date().toLocaleString('es-CL')
+            };
+            templates.push(newT);
+            saveTemplates(templates);
+
+            populateTemplateSelector();
+            document.getElementById('templateSelector').value = newT.id;
+            currentTemplate = newT.text;
+            renderTemplate();
+
+            closeTemplateModal();
+            updateStatus(`Plantilla "${name}" cargada y activa. Se usará por defecto.`, 'success');
+        }
+
+        function deleteSelectedTemplate() {
+            const sel = document.getElementById('templateSelector');
+            let templates = loadTemplates();
+            if (templates.length <= 1) {
+                alert('No puede eliminar la última plantilla.');
+                return;
+            }
+            const selected = templates.find(t => String(t.id) === sel.value);
+            if (!selected) return;
+            if (!confirm(`¿Eliminar la plantilla "${selected.name}"?`)) return;
+
+            templates = templates.filter(t => String(t.id) !== sel.value);
+            saveTemplates(templates);
+            populateTemplateSelector();
+            switchTemplate();
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            populateTemplateSelector();
+            // Load the latest template
+            const templates = loadTemplates();
+            if (templates.length > 0) {
+                currentTemplate = templates[templates.length - 1].text;
+            }
+            renderTemplate();
+            renderProofAudit();
+            
+            document.getElementById('pdfInput').addEventListener('change', handlePDFUpload);
+        });
+
+        // ============================================================
+        // CHARACTER-SCANNING PLACEHOLDER SYSTEM
+        // ============================================================
+        // Keyword rules: if text between braces contains ALL keywords → maps to field
+        const KEYWORD_RULES = [
+            // MP proofs (check multi-keyword rules first)
+            { keywords: ['testimonial', 'ministerio'], field: 'prueba_testimonial_mp' },
+            { keywords: ['documental', 'ministerio'], field: 'prueba_documental_mp' },
+            { keywords: ['pericial', 'ministerio'], field: 'prueba_pericial_mp' },
+            { keywords: ['otros', 'medios', 'ministerio'], field: 'otros_medios_mp' },
+            // Defense proofs
+            { keywords: ['enlace', 'defensa'], field: 'pruebas_enlace_defensa' },
+            { keywords: ['recibidas', 'enlace'], field: 'pruebas_enlace_defensa' },
+            { keywords: ['testimonial', 'defensa'], field: 'prueba_testimonial_defensa' },
+            { keywords: ['documental', 'defensa'], field: 'prueba_documental_defensa' },
+            { keywords: ['pericial', 'defensa'], field: 'prueba_pericial_defensa' },
+            { keywords: ['otros', 'medios', 'defensa'], field: 'otros_medios_defensa' },
+            // Standalone proof keywords (if no "ministerio" or "defensa" qualifier)
+            { keywords: ['testimonial'], field: 'prueba_testimonial_mp' },
+            { keywords: ['documental'], field: 'prueba_documental_mp' },
+            { keywords: ['pericial'], field: 'prueba_pericial_mp' },
+            { keywords: ['otros', 'medios'], field: 'otros_medios_mp' },
+            // General fields
+            { keywords: ['domicilio', 'imputado'], field: 'domicilio_imputado' },
+            { keywords: ['calificacion'], field: 'calificacion' },
+            { keywords: ['participacion'], field: 'participacion' },
+            { keywords: ['circunstancias'], field: 'circunstancias' },
+            { keywords: ['preceptos'], field: 'preceptos' },
+            { keywords: ['imputado'], field: 'imputado' },
+            { keywords: ['hechos'], field: 'hechos' },
+            { keywords: ['fecha'], field: 'fecha' },
+            { keywords: ['pena'], field: 'pena' },
+        ];
+
+        // Resolve any placeholder text to a snake_case field name
+        function resolveField(innerText) {
+            const trimmed = innerText.trim();
+            // 1. Already snake_case? Direct match
+            if (/^\w+$/.test(trimmed)) {
+                const lower = trimmed.toLowerCase();
+                if (extractedData.hasOwnProperty(lower) || ['rit','ruc','fecha'].includes(lower)) return lower;
+                if (extractedData.hasOwnProperty(trimmed)) return trimmed;
+            }
+            // 2. Keyword-based detection (accent + case insensitive)
+            const norm = trimmed.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            for (const rule of KEYWORD_RULES) {
+                if (rule.keywords.every(kw => norm.includes(kw))) return rule.field;
+            }
+            if (norm === 'rit') return 'rit';
+            if (norm === 'ruc') return 'ruc';
+            return null;
+        }
+
+        // Scan text for brace-enclosed placeholders and process each one
+        // Callback receives (fullMatch, startIdx, endIdx, resolvedField) and returns replacement string
+        function scanAndReplaceBraces(text, callback) {
+            let result = '';
+            let i = 0;
+            while (i < text.length) {
+                if (text[i] === '{') {
+                    // Count opening braces
+                    let openCount = 0;
+                    let j = i;
+                    while (j < text.length && text[j] === '{') { openCount++; j++; }
+                    
+                    if (openCount >= 1) {
+                        // Find closing brace(s) — search up to 500 chars ahead
+                        let closeIdx = -1;
+                        for (let k = j; k < Math.min(j + 500, text.length); k++) {
+                            if (text[k] === '}') { closeIdx = k; break; }
+                        }
+                        
+                        if (closeIdx >= 0) {
+                            // Count closing braces
+                            let closeEnd = closeIdx;
+                            while (closeEnd < text.length && text[closeEnd] === '}') closeEnd++;
+                            
+                            const inner = text.substring(j, closeIdx);
+                            const field = resolveField(inner);
+                            
+                            if (field) {
+                                const replacement = callback(text.substring(i, closeEnd), i, closeEnd, field);
+                                result += replacement;
+                                i = closeEnd;
+                                continue;
+                            }
+                        }
+                    }
+                }
+                result += text[i];
+                i++;
+            }
+            return result;
+        }
+
+        // Sanitize text: fix Word-specific characters
+        function sanitizeText(text) {
+            return text
+                .replace(/\u00A0/g, ' ')
+                .replace(/[\u2018\u2019\u201A]/g, "'")
+                .replace(/[\u201C\u201D\u201E]/g, '"')
+                .replace(/[\uFF5B\uFE5B]/g, '{')
+                .replace(/[\uFF5D\uFE5C]/g, '}')
+                .replace(/[‐‑–—]/g, '-')
+                .replace(/\r\n/g, '\n')
+                .replace(/\r/g, '\n');
+        }
+
+        // Normalize template: convert ALL brace placeholders to {{snake_case}}
+        function normalizeTemplate(text) {
+            const clean = sanitizeText(text);
+            return scanAndReplaceBraces(clean, (match, start, end, field) => {
+                return `{{${field}}}`;
+            });
+        }
+
+        // Render template with highlights — character scanning, immune to encoding issues
+        function renderTemplate() {
+            const clean = sanitizeText(currentTemplate);
+            
+            const html = scanAndReplaceBraces(clean, (match, start, end, field) => {
+                const hasData = extractedData[field] && extractedData[field].length > 0;
+                if (hasData) {
+                    const isDefense = field.includes('defensa');
+                    const cssClass = isDefense ? 'field-filled-defensa' : 'field-filled-mp';
+                    console.log(`[APJO] ${field} → FILLED (${extractedData[field].length} chars)`);
+                    return `<span class="${cssClass}">${extractedData[field]}</span>`;
+                }
+                return `<span class="field-tag">{{${field}}}</span>`;
+            });
+            
+            document.getElementById('templatePreview').innerHTML = html;
+            console.log('[APJO] Rendered. Data keys:', Object.keys(extractedData).filter(k => extractedData[k] && extractedData[k].length > 0));
+        }
+
+        // Handle PDF upload
+        async function handlePDFUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            updateStatus('Cargando PDF...', 'loading');
+            
+            try {
+                // Show actual PDF in embed
+                const fileURL = URL.createObjectURL(file);
+                document.getElementById('pdfPlaceholder').style.display = 'none';
+                const embed = document.getElementById('pdfEmbed');
+                embed.src = fileURL;
+                embed.style.display = 'block';
+
+                // Convert to Base64 for Claude Vision
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    pdfBase64 = reader.result.replace('data:', '').replace(/^.+,/, '');
+                };
+                reader.readAsDataURL(file);
+
+                // Still extract text via PDF.js for RIT fallback detection
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+                
+                let fullText = '';
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items
+                        .sort((a, b) => {
+                            const yDiff = (b.transform[5] || 0) - (a.transform[5] || 0);
+                            if (Math.abs(yDiff) > 1) return yDiff;
+                            return (a.transform[4] || 0) - (b.transform[4] || 0);
+                        })
+                        .map((item, idx, arr) => {
+                            if (idx === 0) return item.str;
+                            const prev = arr[idx - 1];
+                            const sameLine = Math.abs((item.transform[5] || 0) - (prev.transform[5] || 0)) < 2;
+                            return (sameLine ? ' ' : '\n') + item.str;
+                        })
+                        .join('');
+                    fullText += pageText + '\n\n';
+                }
+                
+                pdfText = fullText;
+                
+                // Try to extract RIT from filename or content
+                const ritMatch = file.name.match(/RIT\s*(\d+-\d+)/i) || fullText.match(/RIT[:\s]*(\d+-\d+)/i);
+                if (ritMatch) {
+                    document.getElementById('ritInput').value = ritMatch[1];
+                }
+                
+                updateStatus('PDF cargado correctamente. Ingrese su API Key y presione el botón de IA.', 'success');
+            } catch (error) {
+                console.error('Error loading PDF:', error);
+                updateStatus('Error al cargar el PDF: ' + error.message, 'error');
+            }
+        }
+
+        // Legacy extraction fallback (Disabled)
+        function extractFromPDF() {
+            // Replaced by extractWithClaude
+        }
+
+        // ==========================================
+        // CLAUDE VISION EXTRACTION
+        // ==========================================
+        let apiKeyValidated = false;
+
+        async function validateClaudeAPI() {
+            const apiKey = document.getElementById('claudeApiKey').value.trim();
+            if (!apiKey) {
+                updateStatus('Ingrese su API Key primero', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('btnConnectAPI');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Validando...';
+
+            const statusContainer = document.getElementById('apiStatusContainer');
+            statusContainer.classList.remove('hidden');
+
+            try {
+                const response = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': apiKey,
+                        'anthropic-version': '2023-06-01'
+                    },
+                    body: JSON.stringify({
+                        model: "claude-3-5-sonnet-20241022",
+                        max_tokens: 100,
+                        messages: [
+                            {
+                                role: "user",
+                                content: "Responde solo con: OK"
+                            }
+                        ]
+                    })
+                });
+
+                if (response.ok) {
+                    apiKeyValidated = true;
+                    const statusIcon = document.getElementById('apiStatusIcon');
+                    const statusText = document.getElementById('apiStatusText');
+                    statusIcon.className = 'fas fa-check-circle text-green-600';
+                    statusText.textContent = '✓ API conectada correctamente';
+                    statusContainer.className = 'mb-3 p-2 rounded-lg text-sm font-semibold flex items-center gap-2 bg-green-100 text-green-800';
+
+                    const extractBtn = document.getElementById('btnExtractClaude');
+                    extractBtn.disabled = false;
+
+                    updateStatus('API Key validada. Puede proceder con el barrido del PDF.', 'success');
+                } else {
+                    const errorText = await response.text();
+                    throw new Error(`Error ${response.status}: ${errorText}`);
+                }
+            } catch (error) {
+                apiKeyValidated = false;
+                const statusIcon = document.getElementById('apiStatusIcon');
+                const statusText = document.getElementById('apiStatusText');
+                statusIcon.className = 'fas fa-times-circle text-red-600';
+                statusText.textContent = '✗ Error de conexión: ' + error.message;
+                statusContainer.className = 'mb-3 p-2 rounded-lg text-sm font-semibold flex items-center gap-2 bg-red-100 text-red-800';
+
+                const extractBtn = document.getElementById('btnExtractClaude');
+                extractBtn.disabled = true;
+
+                updateStatus('Error validando API Key: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-plug mr-1"></i>Conectar';
+            }
+        }
+
+        async function extractWithClaude() {
+            if (!pdfBase64) {
+                updateStatus('Primero debe cargar un PDF de acusación fiscal', 'error');
+                return;
+            }
+
+            if (!apiKeyValidated) {
+                updateStatus('Primero debe validar su API Key presionando el botón "Conectar"', 'error');
+                return;
+            }
+
+            const apiKey = document.getElementById('claudeApiKey').value.trim();
+            if (!apiKey) {
+                updateStatus('Debe ingresar su API Key de Claude', 'error');
+                return;
+            }
+
+            updateStatus('Analizando con IA Claude Vision...', 'loading');
+            
+            const btn = document.getElementById('btnExtractClaude');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> LEYENDO PDF...';
+
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+            const progressPercent = document.getElementById('progressPercent');
+            progressContainer.classList.remove('hidden');
+            
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                if (progress < 90) {
+                    progress += Math.random() * 5;
+                    progressBar.style.width = `${progress}%`;
+                    progressPercent.innerText = `${Math.round(progress)}%`;
+                }
+            }, 500);
+
+            try {
+                const systemPrompt = "Eres un asistente legal experto chileno. Tu tarea es extraer la información exacta de una acusación fiscal (PDF) para llenar una plantilla de Auto de Apertura de Juicio Oral. Debes devolver un JSON válido con las siguientes claves exactas: rit, ruc, imputado (nombres completos), hechos (resumen o transcripción de los hechos acusados), calificacion (calificación jurídica), participacion (grado de participación), circunstancias (circunstancias modificatorias), preceptos (preceptos legales), pena (pena requerida), prueba_testimonial_mp (texto completo de la prueba testimonial ofrecida), prueba_documental_mp (texto de la prueba documental), prueba_pericial_mp (texto de la prueba pericial), otros_medios_mp (otros medios de prueba). Si algo no está presente, devuelve una cadena vacía. Asegúrate de extraer TODO el texto de cada sección de pruebas, no lo resumas. Solo responde con un JSON válido y nada más.";
+                
+                const response = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': apiKey,
+                        'anthropic-version': '2023-06-01',
+                        'anthropic-dangerously-allow-browser': 'true'
+                    },
+                    body: JSON.stringify({
+                        model: "claude-3-5-sonnet-20241022",
+                        max_tokens: 8192,
+                        system: systemPrompt,
+                        messages: [
+                            {
+                                role: "user",
+                                content: [
+                                    {
+                                        type: "document",
+                                        source: {
+                                            type: "base64",
+                                            media_type: "application/pdf",
+                                            data: pdfBase64
+                                        }
+                                    },
+                                    {
+                                        type: "text",
+                                        text: "Extrae la información en JSON según las instrucciones del system prompt."
+                                    }
+                                ]
+                            }
+                        ]
+                    })
+                });
+
+                clearInterval(progressInterval);
+                progressBar.style.width = '100%';
+                progressPercent.innerText = '100%';
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Error de la API: ${response.status} - ${errorText}`);
+                }
+
+                const data = await response.json();
+                
+                let jsonResponse = data.content[0].text;
+                // Clean up markdown json tags if present
+                jsonResponse = jsonResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+                
+                const parsedData = JSON.parse(jsonResponse);
+                
+                // Merge with extractedData
+                extractedData = { ...extractedData, ...parsedData };
+                
+                // Update RIT input if Claude found it
+                if (extractedData.rit) {
+                    document.getElementById('ritInput').value = extractedData.rit;
+                } else {
+                    extractedData.rit = document.getElementById('ritInput').value;
+                }
+                
+                extractedData.fecha = formatDateInWords(new Date());
+
+                // Defense placeholders remain empty initially
+                extractedData.prueba_testimonial_defensa = extractedData.prueba_testimonial_defensa || '';
+                extractedData.prueba_documental_defensa = extractedData.prueba_documental_defensa || '';
+                extractedData.prueba_pericial_defensa = extractedData.prueba_pericial_defensa || '';
+                extractedData.otros_medios_defensa = extractedData.otros_medios_defensa || '';
+
+                renderExtractedData();
+                renderTemplate();
+                renderProofAudit();
+
+                updateStatus('Datos extraídos correctamente por Claude Vision. Revise y edite si es necesario.', 'success');
+
+            } catch (error) {
+                console.error('Error extracting with Claude:', error);
+                clearInterval(progressInterval);
+                updateStatus('Error en IA: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-brain"></i> BARRIDO Y LECTURA IA DEL PDF';
+                setTimeout(() => progressContainer.classList.add('hidden'), 3000);
+            }
+        }
+
+        // Clean extracted text
+        function cleanText(text) {
+            return text
+                .replace(/\s+([,.;:])/g, '$1')
+                .replace(/\s+/g, ' ')
+                .replace(/^\d+\s*$/, '')
+                .trim();
+        }
+
+        function extractSection(sourceText, startRegex, endRegex) {
+            const startMatch = startRegex.exec(sourceText);
+            if (!startMatch) {
+                console.log('[APJO extractSection] NO MATCH for start:', startRegex.source.substring(0, 60));
+                return '';
+            }
+
+            const startIndex = startMatch.index + startMatch[0].length;
+            const remaining = sourceText.slice(startIndex);
+            const endMatch = endRegex.exec(remaining);
+            const endIndex = endMatch ? endMatch.index : remaining.length;
+            const result = cleanText(remaining.slice(0, endIndex));
+            console.log('[APJO extractSection] MATCH start:', startRegex.source.substring(0, 40), '→', result.length, 'chars');
+            return result;
+        }
+
+        function extractImputados(sourceText) {
+            const match = sourceText.match(/acusaci[oó]n\s+en\s+contra\s+del?\s+imputado[s]?\s+([\s\S]*?)(?=legalmente\s+representado|en\s+atenci[oó]n\s+a\s+los\s+antecedentes|1\s*\.?\s*-?\s*los\s+hechos)/i);
+            if (!match) return '';
+
+            let raw = cleanText(match[1]);
+            raw = raw.replace(/\bse\s+ignora\b[\s\S]*?(?=,|\.|$)/gi, '');
+            raw = raw.replace(/\bprofesi[oó]n\s+u\s+oficio\b/gi, '');
+            raw = raw.replace(/\bdomiciliado\s+en\b[\s\S]*?(?=,\s*[A-ZÁÉÍÓÚÑ]|\.|$)/g, '');
+            raw = raw.replace(/\s{2,}/g, ' ').replace(/\s+,/g, ',').trim();
+            return raw;
+        }
+
+        function normalizeForSearch(text) {
+            return (text || '')
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase();
+        }
+
+        function escapeRegExp(text) {
+            return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function renderPdfPreview() {
+            // Deprecated: PDF is now shown directly using embed
+        }
+
+        function renderPdfPreviewWithHighlights() {
+            // Deprecated: PDF highlights removed as per user request to see original PDF
+        }
+
+        function shouldHighlightValue(value) {
+            const text = String(value || '').trim().toLowerCase();
+            if (!text) return false;
+            if (text.startsWith('no se ofreció')) return false;
+            if (text.startsWith('no ofreció')) return false;
+            if (text.startsWith('no tiene prueba')) return false;
+            if (text.startsWith('no tiene prueba propia')) return false;
+            return true;
+        }
+
+        function numberToSpanishWords(n) {
+            const basic = {
+                0: 'cero',
+                1: 'uno',
+                2: 'dos',
+                3: 'tres',
+                4: 'cuatro',
+                5: 'cinco',
+                6: 'seis',
+                7: 'siete',
+                8: 'ocho',
+                9: 'nueve',
+                10: 'diez',
+                11: 'once',
+                12: 'doce',
+                13: 'trece',
+                14: 'catorce',
+                15: 'quince',
+                16: 'dieciséis',
+                17: 'diecisiete',
+                18: 'dieciocho',
+                19: 'diecinueve',
+                20: 'veinte',
+                21: 'veintiuno',
+                22: 'veintidós',
+                23: 'veintitrés',
+                24: 'veinticuatro',
+                25: 'veinticinco',
+                26: 'veintiséis',
+                27: 'veintisiete',
+                28: 'veintiocho',
+                29: 'veintinueve'
+            };
+
+            if (basic[n] !== undefined) return basic[n];
+
+            const tensMap = {
+                30: 'treinta',
+                40: 'cuarenta',
+                50: 'cincuenta',
+                60: 'sesenta',
+                70: 'setenta',
+                80: 'ochenta',
+                90: 'noventa'
+            };
+
+            const tens = Math.floor(n / 10) * 10;
+            const units = n % 10;
+            if (units === 0) return tensMap[tens] || String(n);
+            return `${tensMap[tens]} y ${basic[units]}`;
+        }
+
+        function yearToSpanishWords(year) {
+            if (year === 2000) return 'dos mil';
+            if (year > 2000 && year < 2100) return `dos mil ${numberToSpanishWords(year - 2000)}`;
+            if (year === 1900) return 'mil novecientos';
+            if (year > 1900 && year < 2000) return `mil novecientos ${numberToSpanishWords(year - 1900)}`;
+            return String(year);
+        }
+
+        function formatDateInWords(dateObj) {
+            const weekdays = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+            const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+            const dayWord = numberToSpanishWords(dateObj.getDate());
+            const monthWord = months[dateObj.getMonth()];
+            const yearWord = yearToSpanishWords(dateObj.getFullYear());
+            const weekDayWord = weekdays[dateObj.getDay()];
+            return `${weekDayWord} ${dayWord} de ${monthWord} de ${yearWord}`;
+        }
+
+        // Render extracted data grid
+        function renderExtractedData() {
+            const grid = document.getElementById('extractedDataGrid');
+            const fields = [
+                { key: 'rit', label: 'RIT' },
+                { key: 'ruc', label: 'RUC' },
+                { key: 'imputado', label: 'Imputado(s)' },
+                { key: 'hechos', label: 'Hechos', large: true },
+                { key: 'calificacion', label: 'Calificación', large: true },
+                { key: 'participacion', label: 'Participación' },
+                { key: 'circunstancias', label: 'Circunstancias' },
+                { key: 'preceptos', label: 'Preceptos' },
+                { key: 'pena', label: 'Pena', large: true },
+                { key: 'prueba_testimonial_mp', label: 'Prueba Testimonial MP', large: true },
+                { key: 'prueba_documental_mp', label: 'Prueba Documental MP', large: true },
+            ];
+
+            let html = '';
+            fields.forEach(field => {
+                const value = extractedData[field.key] || '';
+                const colSpan = field.large ? 'lg:col-span-3 md:col-span-2' : '';
+                html += `
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-2 ${colSpan}">
+                        <label class="block text-xs font-semibold text-yellow-800 mb-1">${field.label}</label>
+                        <textarea 
+                            onchange="updateField('${field.key}', this.value)"
+                            class="w-full text-xs border rounded p-1 bg-white" 
+                            rows="${field.large ? 3 : 1}">${escapeHtml(value)}</textarea>
+                    </div>
+                `;
+            });
+
+            grid.innerHTML = html;
+            renderProofAudit();
+        }
+
+        function renderProofAudit() {
+            const auditGrid = document.getElementById('proofAuditGrid');
+            if (!auditGrid) return;
+
+            const items = [
+                { key: 'prueba_testimonial_mp', label: 'Prueba Testimonial MP' },
+                { key: 'prueba_documental_mp', label: 'Prueba Documental MP' },
+                { key: 'prueba_pericial_mp', label: 'Prueba Pericial MP' },
+                { key: 'otros_medios_mp', label: 'Otros Medios MP' }
+            ];
+
+            const html = items.map((item) => {
+                const state = getProofState(extractedData[item.key]);
+                return `
+                    <div class="border rounded-lg p-3 ${state.cardClass}">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-sm font-semibold text-gray-800">${item.label}</span>
+                            <span class="text-xs font-semibold px-2 py-1 rounded ${state.badgeClass}">${state.badge}</span>
+                        </div>
+                        <div class="text-xs mt-2 ${state.textClass}">${state.detail}</div>
+                    </div>
+                `;
+            }).join('');
+
+            auditGrid.innerHTML = html;
+        }
+
+        function getProofState(value) {
+            const text = String(value || '').trim();
+            const lower = text.toLowerCase();
+
+            if (!pdfText) {
+                return {
+                    badge: 'Sin PDF',
+                    detail: 'Aún no hay acusación fiscal cargada.',
+                    cardClass: 'bg-gray-50 border-gray-200',
+                    badgeClass: 'bg-gray-200 text-gray-700',
+                    textClass: 'text-gray-600'
+                };
+            }
+
+            if (!text) {
+                return {
+                    badge: 'No detectada',
+                    detail: 'No se traspasó texto a esta sección. Revisar manualmente el PDF.',
+                    cardClass: 'bg-red-50 border-red-200',
+                    badgeClass: 'bg-red-200 text-red-800',
+                    textClass: 'text-red-700'
+                };
+            }
+
+            if (!shouldHighlightValue(text)) {
+                return {
+                    badge: 'No ofrecida',
+                    detail: 'El sistema indica que esta prueba no fue ofrecida en la acusación.',
+                    cardClass: 'bg-amber-50 border-amber-200',
+                    badgeClass: 'bg-amber-200 text-amber-800',
+                    textClass: 'text-amber-700'
+                };
+            }
+
+            if (text.length < 18) {
+                return {
+                    badge: 'Revisar',
+                    detail: 'Se detectó texto muy breve. Verificar manualmente que esté completo.',
+                    cardClass: 'bg-orange-50 border-orange-200',
+                    badgeClass: 'bg-orange-200 text-orange-800',
+                    textClass: 'text-orange-700'
+                };
+            }
+
+            return {
+                badge: 'Detectada',
+                detail: 'Traspasada y marcada en plantilla/PDF para verificación visual.',
+                cardClass: 'bg-green-50 border-green-200',
+                badgeClass: 'bg-green-200 text-green-800',
+                textClass: 'text-green-700'
+            };
+        }
+
+        // Update field value
+        function updateField(key, value) {
+            extractedData[key] = value;
+            renderTemplate();
+            renderPdfPreviewWithHighlights();
+            renderProofAudit();
+        }
+
+        // Insert MANUAL defense data (only the textarea fields)
+        function insertManualDefenseData() {
+            extractedData.prueba_testimonial_defensa = document.getElementById('defenseTestimonial').value || 'No ofreció prueba testimonial.';
+            extractedData.prueba_documental_defensa = document.getElementById('defenseDocumental').value || 'No ofreció prueba documental.';
+            extractedData.prueba_pericial_defensa = document.getElementById('defensePericial').value || 'No ofreció prueba pericial.';
+            extractedData.otros_medios_defensa = document.getElementById('defenseOtros').value || 'No ofreció otros medios de prueba.';
+
+            renderTemplate();
+            updateStatus('Pruebas de la defensa escritas manualmente insertadas (resaltadas en verde)', 'success');
+            renderProofAudit();
+        }
+
+        // Insert ENLACE defense data (only Firebase submissions)
+        async function insertEnlaceDefenseData() {
+            const rit = extractedData.rit || document.getElementById('ritInput').value.trim();
+            if (!rit) {
+                updateStatus('Debe ingresar el RIT para obtener pruebas vía enlace', 'error');
+                return;
+            }
+            updateStatus('Obteniendo pruebas vía enlace de la defensa...', 'loading');
+            const defenseLinkText = await fetchDefenseSubmissions(rit);
+            extractedData.pruebas_enlace_defensa = defenseLinkText || 'No se recibieron pruebas vía enlace.';
+
+            renderTemplate();
+            updateStatus('Pruebas de la defensa recibidas vía enlace insertadas (resaltadas en verde)', 'success');
+            renderProofAudit();
+        }
+
+        function clearCurrentCase() {
+            extractedData = {};
+            pdfText = '';
+            pdfBase64 = '';
+
+            document.getElementById('pdfInput').value = '';
+            document.getElementById('ritInput').value = '';
+            document.getElementById('defenseTestimonial').value = '';
+            document.getElementById('defenseDocumental').value = '';
+            document.getElementById('defensePericial').value = '';
+            document.getElementById('defenseOtros').value = '';
+
+            const extractButton = document.getElementById('btnExtractClaude');
+            if(extractButton) {
+                extractButton.disabled = false;
+                extractButton.innerHTML = '<i class="fas fa-brain"></i> BARRIDO Y LECTURA IA DEL PDF';
+            }
+
+            document.getElementById('pdfEmbed').style.display = 'none';
+            document.getElementById('pdfEmbed').src = '';
+            document.getElementById('pdfPlaceholder').style.display = 'block';
+
+            document.getElementById('extractedDataGrid').innerHTML = `
+                <div class="text-center text-gray-400 py-4 col-span-full">
+                    Los datos extraídos aparecerán aquí después de procesar el PDF
+                </div>
+            `;
+
+            renderTemplate();
+            renderProofAudit();
+            updateStatus('PDF limpiado y formulario reiniciado. Puede cargar una nueva acusación.', 'success');
+        }
+
+        // Fetch defense submissions from Firebase for a given RIT
+        function fetchDefenseSubmissions(rit) {
+            return new Promise((resolve) => {
+                if (!firebaseReady || !dbRef) { resolve(''); return; }
+                dbRef.orderByChild('rit').equalTo(rit).once('value').then(snapshot => {
+                    const data = snapshot.val();
+                    if (!data) { resolve(''); return; }
+                    const entries = Object.values(data);
+                    const text = entries.map((s, i) => {
+                        return `[Defensa ${i + 1} - ${s.timestampDisplay || s.timestamp}]\n${s.text}`;
+                    }).join('\n\n');
+                    resolve(text);
+                }).catch(() => resolve(''));
+            });
+        }
+
+        // Generate Word document
+        async function generateWord() {
+            const rit = extractedData.rit || document.getElementById('ritInput').value;
+            let filledTemplate = currentTemplate;
+            if (!rit) {
+                updateStatus('Debe ingresar el RIT de la causa', 'error');
+                return;
+            }
+
+            updateStatus('Generando documento Word (obteniendo pruebas de defensa)...', 'loading');
+
+            try {
+                // Fetch defense submissions from Firebase
+                const defenseLinkText = await fetchDefenseSubmissions(rit);
+                extractedData.pruebas_enlace_defensa = defenseLinkText || 'No se recibieron pruebas vía enlace.';
+
+                // Siempre usar la fecha exacta del momento en que se genera el Word final
+                extractedData.fecha = formatDateInWords(new Date());
+
+                // Replace ALL placeholders with data using character-scanning
+                filledTemplate = sanitizeText(filledTemplate);
+                filledTemplate = scanAndReplaceBraces(filledTemplate, (match, start, end, field) => {
+                    return extractedData[field] || '';
+                });
+                const mpFields = ['hechos', 'calificacion', 'participacion', 'circunstancias', 'preceptos', 'pena', 'prueba_testimonial_mp', 'prueba_documental_mp', 'prueba_pericial_mp', 'otros_medios_mp'];
+                const defFields = ['pruebas_enlace_defensa', 'prueba_testimonial_defensa', 'prueba_documental_defensa', 'prueba_pericial_defensa', 'otros_medios_defensa'];
+
+                let htmlBody = '';
+                filledTemplate.split('\n').forEach((line) => {
+                    const safeLine = escapeHtml(line || '');
+                    const isMPContent = mpFields.some((f) => extractedData[f] && line.includes(extractedData[f]));
+                    const isDefContent = defFields.some((f) => extractedData[f] && line.includes(extractedData[f]));
+
+                    let style = 'margin:0 0 8px 0; text-align:justify;';
+                    if (line.includes('AUTO DE APERTURA DE JUICIO ORAL')) {
+                        style += 'font-weight:bold; text-align:center;';
+                    }
+                    if (/^(PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|SÉPTIMO|OCTAVO|NOVENO):/.test(line)) {
+                        style += 'font-weight:bold;';
+                    }
+                    if (isMPContent) {
+                        style += 'background:#fff59d;';
+                    } else if (isDefContent) {
+                        style += 'background:#c8e6c9;';
+                    }
+
+                    htmlBody += `<p style="${style}">${safeLine || '&nbsp;'}</p>`;
+                });
+
+                const wordHtml = `
+                    <html xmlns:o="urn:schemas-microsoft-com:office:office"
+                          xmlns:w="urn:schemas-microsoft-com:office:word"
+                          xmlns="http://www.w3.org/TR/REC-html40">
+                    <head>
+                        <meta charset="utf-8">
+                        <title>APJO</title>
+                        <style>
+                            body { font-family: 'Times New Roman', serif; font-size: 12pt; }
+                            p { line-height: 1.25; }
+                        </style>
+                    </head>
+                    <body>${htmlBody}</body>
+                    </html>
+                `;
+
+                const now = new Date();
+                const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+                const fileName = `APJO_RIT_${rit.replace('/', '-')}_${timestamp}.doc`;
+                const blob = new Blob([wordHtml], { type: 'application/msword;charset=utf-8' });
+
+                if (typeof window.saveAs === 'function') {
+                    window.saveAs(blob, fileName);
+                } else {
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = fileName;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    URL.revokeObjectURL(url);
+                }
+
+                updateStatus(`Documento generado correctamente: ${fileName}`, 'success');
+            } catch (error) {
+                console.error('Error generating Word:', error);
+                updateStatus('Error al generar documento: ' + error.message, 'error');
+            }
+        }
+
+        // Utility functions
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function updateStatus(message, type) {
+            const statusEl = document.getElementById('statusMessage');
+            const icons = {
+                loading: 'fas fa-spinner fa-spin',
+                success: 'fas fa-check-circle text-green-600',
+                error: 'fas fa-exclamation-circle text-red-600'
+            };
+            statusEl.innerHTML = `<i class="${icons[type] || 'fas fa-info-circle'} mr-1"></i>${message}`;
+        }
+
+        // ============================================================
+        // FIREBASE DEFENSE LINK FEATURE
+        // ============================================================
+
+        // ⚠️ CONFIGURACIÓN FIREBASE — Reemplace con sus datos de Firebase Console
+        const firebaseConfig = {
+            apiKey: "AIzaSyBanQUNHIoUcIqyR0xSTvkYbJVv86NZJQM",
+            authDomain: "apjo-colina.firebaseapp.com",
+            databaseURL: "https://apjo-colina-default-rtdb.firebaseio.com",
+            projectId: "apjo-colina",
+            storageBucket: "apjo-colina.firebasestorage.app",
+            messagingSenderId: "601596406373",
+            appId: "1:601596406373:web:e4ce3cc20aff6bf6f9348c"
+        };
+
+        let firebaseReady = false;
+        let dbRef = null;
+
+        try {
+            firebase.initializeApp(firebaseConfig);
+            dbRef = firebase.database().ref('apjo_submissions');
+            firebaseReady = true;
+        } catch (e) {
+            console.warn('Firebase no configurado aún. Use las instrucciones para configurarlo.', e);
+        }
+
+        // Check if page opened in defense mode
+        function isDefenseMode() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('mode') === 'defensa';
+        }
+
+        function getDefenseRIT() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('rit') || '';
+        }
+
+        // Initialize defense mode if applicable
+        function initDefenseMode() {
+            if (!isDefenseMode()) {
+                // Magistrate view: listen for submissions in real-time
+                listenForSubmissions();
+                return;
+            }
+
+            // DEFENSE VIEW: Hide everything and show only the submission form
+            const rit = getDefenseRIT();
+            document.body.innerHTML = '';
+            document.body.className = 'p-4';
+
+            const container = document.createElement('div');
+            container.className = 'defense-view-container';
+            container.innerHTML = `
+                <div class="defense-view-card">
+                    <div style="text-align:center; margin-bottom: 16px;">
+                        <i class="fas fa-gavel" style="font-size:40px; color:#1e3a5f;"></i>
+                    </div>
+                    <h2 style="text-align:center;">Defensa pública o privada sube su listado de pruebas en AA</h2>
+                    <div style="text-align:center;">
+                        <span class="rit-badge">RIT: ${escapeHtml(rit)}</span>
+                    </div>
+                    <div id="defenseFormArea">
+                        <label style="display:block; font-weight:600; font-size:14px; margin-bottom:6px; color:#374151;">
+                            Pegue aquí su listado de pruebas:
+                        </label>
+                        <textarea id="defenseQRInput" rows="8" 
+                            placeholder="Copie y pegue aquí su listado completo de pruebas..."
+                            style="width:100%; border:2px solid #d1d5db; border-radius:10px; padding:12px; font-size:14px; resize:vertical; margin-bottom:16px;"></textarea>
+                        <button id="btnSubmitDefense" onclick="submitDefenseViaLink()" 
+                            style="width:100%; background:#22c55e; color:white; font-weight:700; padding:14px; border:none; border-radius:10px; font-size:16px; cursor:pointer; transition: background 0.2s;">
+                            <i class="fas fa-upload" style="margin-right:8px;"></i>Subir a Magistrado Rubén Donoso
+                        </button>
+                    </div>
+                </div>
+                <p style="text-align:center; color:rgba(255,255,255,0.6); font-size:12px; margin-top:16px;">
+                    Juzgado de Garantía de Colina
+                </p>
+            `;
+            document.body.appendChild(container);
+        }
+
+        // Submit defense evidence via link form → Firebase
+        function submitDefenseViaLink() {
+            const input = document.getElementById('defenseQRInput');
+            const text = (input.value || '').trim();
+            if (!text) {
+                alert('Debe ingresar su listado de pruebas antes de enviar.');
+                return;
+            }
+
+            if (!firebaseReady) {
+                alert('Error: Firebase no está configurado. Contacte al Magistrado.');
+                return;
+            }
+
+            const btn = document.getElementById('btnSubmitDefense');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:8px;"></i>Enviando...';
+
+            const rit = getDefenseRIT();
+            const submission = {
+                rit: rit,
+                text: text,
+                timestamp: new Date().toISOString(),
+                timestampDisplay: new Date().toLocaleString('es-CL')
+            };
+
+            dbRef.push(submission)
+                .then(() => {
+                    const formArea = document.getElementById('defenseFormArea');
+                    formArea.innerHTML = `
+                        <div class="defense-success">
+                            <i class="fas fa-check-circle"></i>
+                            <h3 style="font-size:20px; font-weight:700; color:#166534; margin-bottom:8px;">
+                                ¡Pruebas enviadas exitosamente!
+                            </h3>
+                            <p style="color:#6b7280; font-size:14px;">
+                                Su listado de pruebas ha sido recibido por el Magistrado Rubén Donoso.<br>
+                                Puede cerrar esta ventana.
+                            </p>
+                        </div>
+                    `;
+                })
+                .catch((err) => {
+                    alert('Error al enviar: ' + err.message);
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-upload" style="margin-right:8px;"></i>Subir a Magistrado Rubén Donoso';
+                });
+        }
+
+        // Listen for submissions in real-time (magistrate view)
+        function listenForSubmissions() {
+            if (!firebaseReady || !dbRef) {
+                renderSubmissionsEmpty('Firebase no configurado. Siga las instrucciones de configuración.');
+                return;
+            }
+
+            dbRef.on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (!data) {
+                    renderSubmissionsEmpty();
+                    return;
+                }
+
+                const all = Object.values(data);
+                const currentRit = (document.getElementById('ritInput')?.value || '').trim();
+                const filtered = currentRit ? all.filter(s => s.rit === currentRit) : all;
+
+                renderSubmissionsList(filtered);
+            });
+
+            // Re-filter when RIT changes
+            document.getElementById('ritInput')?.addEventListener('input', () => {
+                dbRef.once('value').then(snapshot => {
+                    const data = snapshot.val();
+                    if (!data) { renderSubmissionsEmpty(); return; }
+                    const all = Object.values(data);
+                    const currentRit = (document.getElementById('ritInput')?.value || '').trim();
+                    const filtered = currentRit ? all.filter(s => s.rit === currentRit) : all;
+                    renderSubmissionsList(filtered);
+                });
+            });
+        }
+
+        function renderSubmissionsEmpty(msg) {
+            const container = document.getElementById('qrSubmissionsContainer');
+            if (!container) return;
+            container.innerHTML = `<p class="text-sm text-gray-400 italic">${msg || 'Aún no se han recibido pruebas vía enlace.'}</p>`;
+        }
+
+        function renderSubmissionsList(submissions) {
+            const container = document.getElementById('qrSubmissionsContainer');
+            if (!container) return;
+
+            if (!submissions || submissions.length === 0) {
+                renderSubmissionsEmpty();
+                return;
+            }
+
+            let html = '';
+            submissions.forEach((sub) => {
+                html += `
+                    <div class="qr-submission-item">
+                        <div class="meta">
+                            <i class="fas fa-clock mr-1"></i>${escapeHtml(sub.timestampDisplay || sub.timestamp)} — RIT: ${escapeHtml(sub.rit)}
+                        </div>
+                        <div class="content">${escapeHtml(sub.text)}</div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        // Generate shareable link for defense
+        let currentDefenseLink = '';
+
+        function generateDefenseLink() {
+            const rit = document.getElementById('ritInput').value.trim();
+            if (!rit) {
+                updateStatus('Debe ingresar el RIT de la causa antes de generar el enlace.', 'error');
+                return;
+            }
+
+            const baseUrl = 'https://apjo-colina.web.app';
+            currentDefenseLink = `${baseUrl}?mode=defensa&rit=${encodeURIComponent(rit)}`;
+
+            document.getElementById('linkUrlBox').textContent = currentDefenseLink;
+            document.getElementById('linkRitDisplay').textContent = `Causa RIT: ${rit}`;
+
+            const btn = document.getElementById('btnCopyLink');
+            btn.innerHTML = '<i class="fas fa-copy"></i> Copiar enlace';
+            btn.classList.remove('copied');
+
+            document.getElementById('linkModal').classList.remove('hidden');
+            updateStatus('Enlace generado. Compártalo con los defensores.', 'success');
+        }
+
+        function copyDefenseLink() {
+            navigator.clipboard.writeText(currentDefenseLink).then(() => {
+                const btn = document.getElementById('btnCopyLink');
+                btn.innerHTML = '<i class="fas fa-check"></i> ¡Copiado!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.innerHTML = '<i class="fas fa-copy"></i> Copiar enlace';
+                    btn.classList.remove('copied');
+                }, 2500);
+            });
+        }
+
+        function sendDefenseLinkByEmail() {
+            if (!currentDefenseLink) return;
+            const rit = document.getElementById('ritInput').value.trim();
+            const subject = encodeURIComponent(`Envío de pruebas de la Defensa - RIT ${rit}`);
+            const body = encodeURIComponent(
+                `Estimado/a Defensor/a,\n\n` +
+                `Se le solicita que suba su listado de pruebas para la causa RIT ${rit}.\n\n` +
+                `Haga clic en el siguiente enlace para enviar sus pruebas al Magistrado Rubén Donoso:\n\n` +
+                `${currentDefenseLink}\n\n` +
+                `Atte.\nMagistrado Rubén Hernán Donoso Paredes\nJuzgado de Garantía de Colina`
+            );
+            // Open Gmail compose
+            window.open(`https://mail.google.com/mail/?view=cm&fs=1&su=${subject}&body=${body}`, '_blank');
+        }
+
+        function closeLinkModal() {
+            document.getElementById('linkModal').classList.add('hidden');
+        }
+
+        document.addEventListener('click', function(e) {
+            if (e.target.id === 'linkModal') closeLinkModal();
+            if (e.target.id === 'templateModal') closeTemplateModal();
+        });
+
+        // Clear Firebase submissions for current RIT (or all if no RIT)
+        function clearFirebaseSubmissions() {
+            if (!firebaseReady || !dbRef) {
+                alert('Firebase no está configurado.');
+                return;
+            }
+
+            const rit = (document.getElementById('ritInput')?.value || '').trim();
+            const msg = rit
+                ? `¿Está seguro de eliminar todas las pruebas vía enlace del RIT ${rit}?`
+                : '¿Está seguro de eliminar TODAS las pruebas vía enlace?';
+
+            if (!confirm(msg)) return;
+
+            if (!rit) {
+                // Delete all submissions
+                dbRef.remove().then(() => {
+                    renderSubmissionsEmpty();
+                    updateStatus('Todas las pruebas vía enlace han sido eliminadas.', 'success');
+                }).catch(err => alert('Error: ' + err.message));
+            } else {
+                // Delete only submissions for this RIT
+                dbRef.orderByChild('rit').equalTo(rit).once('value').then(snapshot => {
+                    const updates = {};
+                    snapshot.forEach(child => { updates[child.key] = null; });
+                    return dbRef.update(updates);
+                }).then(() => {
+                    renderSubmissionsEmpty();
+                    updateStatus(`Pruebas vía enlace del RIT ${rit} eliminadas.`, 'success');
+                }).catch(err => alert('Error: ' + err.message));
+            }
+        }
+
+        // Extend clearCurrentCase
+        const originalClearCase = clearCurrentCase;
+        clearCurrentCase = function() {
+            originalClearCase();
+            renderSubmissionsEmpty();
+        };
+
+        // Initialize
+        initDefenseMode();
+
+        console.log('✅ Generador APJO cargado correctamente');
+    </script>
+</body>
+</html>
