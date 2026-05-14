@@ -1649,6 +1649,7 @@ REGLAS CRÍTICAS — léelas en orden y respétalas siempre:
 CLAVES REQUERIDAS (todas obligatorias, valor "" si no existe en el PDF):
 - rit: número RIT (ej: "O-123-2024")
 - ruc: número RUC (ej: "2400123456-0")
+- fiscal: NOMBRE COMPLETO del Fiscal del Ministerio Público que firma/deduce la acusación. Suele aparecer al inicio del escrito en la fórmula "DON/DOÑA NOMBRE COMPLETO, Fiscal Adjunto/Jefe de ...". Devuelve SOLO el nombre completo (sin cargo, sin "don/doña", sin coma). Ej: "ALEJANDRO JOSÉ SÁNCHEZ MONDACA". Si no aparece, "".
 - imputado: nombre completo del imputado o lista de imputados separados por coma
 - domicilio_imputado: domicilio del imputado tal como aparece
 - hechos: SOLO el cuerpo de la sección "RELACIÓN DE LOS HECHOS" / "PRIMERO" / "HECHOS DE LA ACUSACIÓN". NO incluir calificación, participación, circunstancias ni pruebas.
@@ -1728,7 +1729,15 @@ CLAVES REQUERIDAS (todas obligatorias, valor "" si no existe en el PDF):
                 } else {
                     extractedData.rit = document.getElementById('ritInput').value;
                 }
-                
+
+                // Auto-rellenar Fiscal Titular si Claude lo extrajo y el usuario no lo escribió
+                if (extractedData.fiscal && extractedData.fiscal.trim()) {
+                    const fiscalInput = document.getElementById('fiscalTitular');
+                    if (fiscalInput && !fiscalInput.value.trim()) {
+                        fiscalInput.value = extractedData.fiscal.trim();
+                    }
+                }
+
                 extractedData.fecha = formatDateInWords(new Date());
 
                 // Defense placeholders remain empty initially
