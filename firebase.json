@@ -1,4 +1,7 @@
 {
+  "functions": {
+    "source": "functions"
+  },
   "hosting": {
     "public": ".",
     "ignore": [
@@ -6,7 +9,14 @@
       "netlify.toml",
       ".gitignore",
       "windsurf_deployment.yaml",
+      "functions/**",
       "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/api/**",
+        "function": "api"
+      }
     ]
   }
 }
